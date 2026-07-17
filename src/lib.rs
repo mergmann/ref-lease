@@ -15,7 +15,7 @@ impl Error for LeaseRevoked {}
 pub struct LeaseRef<T> {
     ptr: NonNull<T>,
     valid: Rc<Cell<bool>>,
-    _data: PhantomData<T>,
+    _data: PhantomData<*const T>,
 }
 
 impl<T> LeaseRef<T> {
@@ -43,7 +43,7 @@ impl<T> Clone for LeaseRef<T> {
 pub struct LeaseMut<T> {
     ptr: NonNull<T>,
     valid: Rc<Cell<bool>>,
-    _data: PhantomData<Cell<T>>,
+    _data: PhantomData<*mut T>,
 }
 
 impl<T> LeaseMut<T> {
@@ -119,7 +119,10 @@ pub struct LeaseToken(Rc<Cell<bool>>);
 /// # Safety:
 /// When implementing `Lease`, make sure all references
 /// outlive `self`. No temporary borrows or references
-/// to owned fields of `self` are allowed
+/// to owned fields of `self` are allowed.
+/// Additionally, keep the mutable borrow invariance:
+/// There should only ever be one `LeaseMut` to the
+/// same memory and there must be no `LeaseRef`s to it.
 pub unsafe trait Lease {
     type Output;
 
@@ -218,6 +221,7 @@ pub fn lease<T: Lease, R>(reference: T, func: impl FnOnce(T::Output) -> R) -> R 
     func(reference.make_lease(&token))
 }
 
+#[cfg(test)]
 mod tests {
     #[test]
     fn tuple() {
