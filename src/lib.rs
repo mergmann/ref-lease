@@ -117,6 +117,11 @@ pub struct LeaseToken {
 /// assert_eq!(value1, v1);
 /// assert_eq!(value2, "hello world!");
 /// ```
+///
+/// # Safety:
+/// When implementing `Lease`, make sure all references
+/// outlive `self`. No temporary borrows or references
+/// to owned fields of `self` are allowed
 pub unsafe trait Lease {
     type Output;
 
