@@ -87,11 +87,13 @@ pub struct LeaseToken {
 ///     field2: LeaseMut<String>,
 /// }
 ///
-/// impl<'a> Lease for MyStruct<'a> {
+/// unsafe impl<'a> Lease for MyStruct<'a> {
 ///     type Output = MyStructLease;
 ///
 ///     fn make_lease(self, token: &LeaseToken) -> Self::Output {
 ///         MyStructLease {
+///             // Safety:
+///             // We're only using fields on self, no temporary borrows
 ///             field1: self.field1.make_lease(token),
 ///             field2: self.field2.make_lease(token),
 ///         }
@@ -119,13 +121,13 @@ pub struct LeaseToken {
 /// assert_eq!(value1, v1);
 /// assert_eq!(value2, "hello world!");
 /// ```
-pub trait Lease {
+pub unsafe trait Lease {
     type Output;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output;
 }
 
-impl<T> Lease for &T {
+unsafe impl<T> Lease for &T {
     type Output = LeaseRef<T>;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
@@ -138,7 +140,7 @@ impl<T> Lease for &T {
     }
 }
 
-impl<T> Lease for &mut T {
+unsafe impl<T> Lease for &mut T {
     type Output = LeaseMut<T>;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
@@ -153,7 +155,7 @@ impl<T> Lease for &mut T {
 
 macro_rules! impl_tuple {
     ($($name:ident),*$(,)?) => {
-        impl<$($name,)*> Lease for ($($name,)*)
+        unsafe impl<$($name,)*> Lease for ($($name,)*)
         where
             $($name: Lease,)*
         {
