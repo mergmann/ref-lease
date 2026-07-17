@@ -63,9 +63,7 @@ impl<T> LeaseMut<T> {
     }
 }
 
-pub struct LeaseToken {
-    inner: Rc<Cell<bool>>,
-}
+pub struct LeaseToken(Rc<Cell<bool>>);
 
 /// The trait for making something leasable
 /// Implement this if you have a complex struct.
@@ -134,7 +132,7 @@ unsafe impl<T> Lease for &T {
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
         LeaseRef {
             ptr: self.into(),
-            valid: token.inner.clone(),
+            valid: token.0.clone(),
             _data: PhantomData,
         }
     }
@@ -146,7 +144,7 @@ unsafe impl<T> Lease for &mut T {
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
         LeaseMut {
             ptr: self.into(),
-            valid: token.inner.clone(),
+            valid: token.0.clone(),
             _data: PhantomData,
         }
     }
@@ -206,13 +204,18 @@ impl_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
 /// assert!(result.is_err())
 /// ```
 pub fn lease<T: Lease, R>(reference: T, func: impl FnOnce(T::Output) -> R) -> R {
+    // Invalidate lease on panic
+    struct RAIIGuard(Rc<Cell<bool>>);
+    impl Drop for RAIIGuard {
+        fn drop(&mut self) {
+            self.0.set(false);
+        }
+    }
+
     let valid = Rc::new(Cell::new(true));
-    let token = LeaseToken {
-        inner: valid.clone(),
-    };
-    let ret = func(reference.make_lease(&token));
-    valid.set(false);
-    ret
+    let token = LeaseToken(valid.clone());
+    let _guard = RAIIGuard(valid);
+    func(reference.make_lease(&token))
 }
 
 mod tests {
