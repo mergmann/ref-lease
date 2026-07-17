@@ -12,13 +12,16 @@ impl fmt::Display for LeaseRevoked {
 impl Error for LeaseRevoked {}
 
 /// Lease for an `&T`
-pub struct LeaseRef<T> {
+pub struct LeaseRef<T>
+where
+    T: ?Sized,
+{
     ptr: NonNull<T>,
     valid: Rc<Cell<bool>>,
     _data: PhantomData<*const T>,
 }
 
-impl<T> LeaseRef<T> {
+impl<T: ?Sized> LeaseRef<T> {
     pub fn with<R>(&self, func: impl FnOnce(&T) -> R) -> Result<R, LeaseRevoked> {
         if self.valid.get() {
             // See LeaseMut::with for safety
@@ -40,13 +43,16 @@ impl<T> Clone for LeaseRef<T> {
 }
 
 /// Lease for an `&mut T`
-pub struct LeaseMut<T> {
+pub struct LeaseMut<T>
+where
+    T: ?Sized,
+{
     ptr: NonNull<T>,
     valid: Rc<Cell<bool>>,
     _data: PhantomData<*mut T>,
 }
 
-impl<T> LeaseMut<T> {
+impl<T: ?Sized> LeaseMut<T> {
     pub fn with<R>(&mut self, func: impl FnOnce(&mut T) -> R) -> Result<R, LeaseRevoked> {
         if self.valid.get() {
             // Safety:
@@ -129,7 +135,7 @@ pub unsafe trait Lease {
     fn make_lease(self, token: &LeaseToken) -> Self::Output;
 }
 
-unsafe impl<T> Lease for &T {
+unsafe impl<T: ?Sized> Lease for &T {
     type Output = LeaseRef<T>;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
@@ -141,7 +147,7 @@ unsafe impl<T> Lease for &T {
     }
 }
 
-unsafe impl<T> Lease for &mut T {
+unsafe impl<T: ?Sized> Lease for &mut T {
     type Output = LeaseMut<T>;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
@@ -231,5 +237,17 @@ mod tests {
         let tuple = (&v1, &mut v2, &v3);
 
         lease(tuple, |(_l1, _l2, _l3)| {});
+    }
+
+    #[test]
+    fn not_sized() {
+        use super::lease;
+
+        let mut arr = [1, 2, 3];
+        let slice = arr.as_mut_slice();
+        lease(slice, |mut lease| {
+            lease.with(|slice| slice[0] = 42).unwrap();
+        });
+        assert_eq!(arr, [42, 2, 3]);
     }
 }
