@@ -1,11 +1,5 @@
 use std::{cell::Cell, error::Error, fmt, marker::PhantomData, ptr::NonNull, rc::Rc};
 
-struct LeaseInner<T> {
-    ptr: NonNull<T>,
-    valid: Rc<Cell<bool>>,
-    _data: PhantomData<T>,
-}
-
 /// This error is returned when trying to access a lease after it has been revoked
 #[derive(Debug, Clone, Copy)]
 pub struct LeaseRevoked;
@@ -19,14 +13,16 @@ impl Error for LeaseRevoked {}
 
 /// Lease for an `&T`
 pub struct LeaseRef<T> {
-    inner: LeaseInner<T>,
+    ptr: NonNull<T>,
+    valid: Rc<Cell<bool>>,
+    _data: PhantomData<T>,
 }
 
 impl<T> LeaseRef<T> {
     pub fn with<R>(&self, func: impl FnOnce(&T) -> R) -> Result<R, LeaseRevoked> {
-        if self.inner.valid.get() {
+        if self.valid.get() {
             // See LeaseMut::with for safety
-            Ok(func(unsafe { self.inner.ptr.as_ref() }))
+            Ok(func(unsafe { self.ptr.as_ref() }))
         } else {
             Err(LeaseRevoked)
         }
@@ -36,23 +32,23 @@ impl<T> LeaseRef<T> {
 impl<T> Clone for LeaseRef<T> {
     fn clone(&self) -> Self {
         Self {
-            inner: LeaseInner {
-                ptr: self.inner.ptr,
-                valid: self.inner.valid.clone(),
-                _data: PhantomData,
-            },
+            ptr: self.ptr,
+            valid: self.valid.clone(),
+            _data: PhantomData,
         }
     }
 }
 
 /// Lease for an `&mut T`
 pub struct LeaseMut<T> {
-    inner: LeaseInner<T>,
+    ptr: NonNull<T>,
+    valid: Rc<Cell<bool>>,
+    _data: PhantomData<Cell<T>>,
 }
 
 impl<T> LeaseMut<T> {
     pub fn with<R>(&mut self, func: impl FnOnce(&mut T) -> R) -> Result<R, LeaseRevoked> {
-        if self.inner.valid.get() {
+        if self.valid.get() {
             // Safety:
             // The pointer validity has been checked
             // and it can't be smuggled out of func.
@@ -60,7 +56,7 @@ impl<T> LeaseMut<T> {
             // access to the valid flag is possible
             // and there can't be any reference when
             // `lease(args, func)` returns.
-            Ok(func(unsafe { self.inner.ptr.as_mut() }))
+            Ok(func(unsafe { self.ptr.as_mut() }))
         } else {
             Err(LeaseRevoked)
         }
@@ -131,12 +127,11 @@ unsafe impl<T> Lease for &T {
     type Output = LeaseRef<T>;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
-        let inner = LeaseInner {
+        LeaseRef {
             ptr: self.into(),
             valid: token.inner.clone(),
             _data: PhantomData,
-        };
-        LeaseRef { inner }
+        }
     }
 }
 
@@ -144,12 +139,11 @@ unsafe impl<T> Lease for &mut T {
     type Output = LeaseMut<T>;
 
     fn make_lease(self, token: &LeaseToken) -> Self::Output {
-        let inner = LeaseInner {
+        LeaseMut {
             ptr: self.into(),
             valid: token.inner.clone(),
             _data: PhantomData,
-        };
-        LeaseMut { inner }
+        }
     }
 }
 
